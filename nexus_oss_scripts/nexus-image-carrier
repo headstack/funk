@@ -1,0 +1,54 @@
+#!/bin/bash
+
+FROM="$1"
+TO="$2"
+LOGIN="YOUR_COOL_USERNAME"
+PASS="YOUR_STRONG_PASSWD"
+debug="echo -e"
+
+if [[ "$1" = "--help" ]] || [[ "$1" = "-h" ]] || [[ "$2" = "--help" ]] || [[ "$2" = "-h" ]] || [[ -z "$1" ]] || [[ -z "$2" ]]; then
+    echo -e "\nHELP\nYou need write in a \$1 path to your locally directory when you need to
+             store downloaded images like a \"/path/to/your/images\" format.\nA \$2 you need
+             write a full url path to the remote nexus repo side when your images has been downloaded
+             like a \"http://11.22.33.44:8081/repository/ISO\"."
+    echo -e "Use "-d" / "--debug" as a \$3 argument option for see what be done in a cycle"
+    echo -e "Example usage: \n nexus-image-carrier /var/images/portal_images/ http://11.22.33.44:8081/repository/ISO"
+    exit 1
+fi
+
+echo -e "Start centos images names array mapping"
+mapfile -t centos_name < <(openstack image list | egrep "linux_centos_7.[0-9]_x86_64_ceph|linux_centos_8.[0-9]_x86_64_ceph" | grep -v "ceph_v[0-9]" | awk '{print $4}')
+echo -e "Done..\n"
+ 
+if [[ "$3" = "-d" ]] || [[ "$3" = "--debug" ]]; then
+
+  for img in ${centos_name[*]}; do 
+    echo "Start operating with $img image"
+    echo "Creating storage directory in $FROM"
+    $debug "mkdir -p $FROM/"
+    echo "Downloading $img image"
+    $debug "openstack image save $img --file $FROM/$img"
+    echo "Downloading to nexus in $TO"
+    $debug "curl -v -u $LOGIN:$PASS --upload-file \"$FROM/$img\" \"$TO/$img\""
+    echo "Clearing (Deleting) $FROM directory" && $debug "rm -rf $FROM/"
+    echo -e "Done. Next image\n"
+  done
+ 
+else
+
+  for img in ${centos_name[*]}; do
+    echo "Start operating with $img image"
+    echo "Creating storage directory in $FROM"
+    mkdir -p $FROM/
+    echo "Downloading $img image"
+    openstack image save $img --file $FROM/$img
+    echo "Downloading to nexus in $TO"
+    curl -v -u $LOGIN:$PASS --upload-file "$FROM/$img" "$TO/$img"
+    echo "Clearing (Deleting) $FROM directory"
+    rm -rf $FROM/ && echo -e "Done. Next image\n"
+  done
+
+echo "All images has been stored in nexus $TO"
+echo "Exit 0 - Success"
+
+fi

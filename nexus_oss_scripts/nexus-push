@@ -1,0 +1,105 @@
+#!/bin/bash
+# Text Color Variables http://misc.flogisoft.com/bash/tip_colors_and_formatting
+tcLtG="\033[00;37m"   		 # LIGHT GRAY
+tcDkG="\033[01;30m"   		 # DARK GRAY
+tcLtR="\033[01;31m"   		 # LIGHT RED
+tcLtGRN="\033[01;32m" 		 # LIGHT GREEN
+tcLtBL="\033[01;34m"  		 # LIGHT BLUE
+tcLtP="\033[01;35m"   		 # LIGHT PURPLE
+tcLtC="\033[01;36m"   		 # LIGHT CYAN
+tcW="\033[01;37m"      		 # WHITE
+tcRESET="\033[0m"     		 # DROP ALL COLORS
+tcORANGE="\033[38;5;209m"	 # ORANGE
+#
+
+LOGIN="YOUR_COOL_USER"
+PASS="YOUR_COOL_PASSWD"
+CURDATE=$(date)
+
+case "$1" in
+astra) mapfile -t from_forming_dirs_structure < <(find "$2" -type f | awk -F"$2" '{print $NF}')      
+       for packet in ${from_forming_dirs_structure[*]}; do
+       cd $2
+       echo -e "$tcW$CURDATE $tcRESET- Uploading package $tcW$packet $tcRESET to $tcW http://$3:$4/repository/$5/ $tcRESET [$tcORANGE PROCEEDING$tcRESET ]"
+       curl -u "$LOGIN:$PASS" -H 'Expect: ' -H "Content-Type: multipart/form-data" --data-binary "@./$packet" "http://$3:$4/repository/$5/"
+       if [[ $? -eq 0 ]]; then
+       echo -e "$tcW$CURDATE $tcRESET- Uploading package $tcW$packet $tcRESET to $tcW http://$3:$4/repository/$5/ $tcRESET [$tcLtC DONE$tcRESET ]\n"
+       else
+       echo -e "$tcW$CURDATE $tcRESET- Uploading package $tcW$packet $tcRESET to $tcW http://$3:$4/repository/$5/ $tcRESET [$tcLtR ERROR$tcRESET ]\n"
+       fi
+       done
+       echo -e "$tcW End work. Nothing to do. $tcRESET"
+       ;;
+alt) 
+
+if [[ "$4" = "--forming-repo-structure" ]] || [[ "$4" = "-s" ]]; then
+   
+     mapfile -t from_forming_dirs_structure < <(find "$2" -type f)
+     FILES_COUNT=$(expr ${#from_forming_dirs_structure[*]} - 1)
+     mapfile -t to_forming_dirs_structure < <(find "$2" -type f | awk -F"$2" '{print $NF}')
+
+       for (( a=0; a<="$FILES_COUNT"; a++ )); do
+
+       echo -e "\n$tcW$CURDATE $tcRESET Start uploading file from ${from_forming_dirs_structure[$a]} to $3/${to_forming_dirs_structure[$a]} [$tcORANGE PROCEEDING$tcRESET ]"
+               
+               curl -H "Content-Type: multipart/form-data" -u $LOGIN:$PASS --upload-file "${from_forming_dirs_structure[$a]}" "$3/${to_forming_dirs_structure[$a]}"
+               
+               if [[ $? -eq 0 ]]; then
+                 echo -e "$tcW$CURDATE $tcRESET End downloading file from ${from_forming_dirs_structure[$a]} to $3/${to_forming_dirs_structure[$a]}\n"
+               else
+                 echo -e "$tcW$CURDATE $tcRESET- Uploading package ${from_forming_dirs_structure[$a]} to $3/${to_forming_dirs_structure[$a]} $tcRESET [$tcLtR ERROR$tcRESET ]\n"
+               fi
+       
+                     echo -e "$tcW End work. Nothing to do. $tcRESET"
+
+             done
+
+else
+  
+     mapfile -t from_d < <(find "$2" -type d ! -empty)
+     DIRS_COUNT=$(expr ${#from_d[*]} - 1)
+
+       for (( a=0; a<="$DIRS_COUNT"; a++ )); do
+
+       echo -e "\nStart downloading files from ${from_d[$a]} directory\n"
+         mapfile -t from_file_dir < <(ls -p "${from_d[$a]}" | grep -v "/")
+           FILES_COUNT=$(expr ${#from_file_dir[*]} - 1)
+
+             for (( i=0; i<="$FILES_COUNT"; i++ )); do
+
+               echo -e "Start downloading file ${from_d[$a]}/${from_file_dir[$i]}"
+               
+               curl -v -u $LOGIN:$PASS --upload-file "${from_d[$a]}/${from_file_dir[$i]}" "$3/${from_file_dir[$i]}"
+               
+               echo -e "End downloading file ${from_d[$a]}/${from_file_dir[$i]}\n"
+             done
+        echo -e "\nEnd downloading files from ${from_d[$a]} directory\n"
+       done
+
+fi       
+;;
+
+*)  
+
+    echo -e "\nHELP\nYou need write in a \$1 path to your locally directory with
+             files like a \"/path/to/your/repo\" format. Last slash in this path NOT REQUIERED!"
+
+    echo -e "A \$2 you need write a full url path to the remote nexus repo side like a
+               \"http://11.22.33.44:8081/repository/ISO\". Last slash in this path NOT REQUIERED!"
+
+    echo -e "A \$3 you may choose "--forming-repo-structure" or "-s". This option create full repo structure
+             in \$1 directory."
+
+    echo -e "A \$4 option - for \$3. She's reset path part for forming repo structure.
+             Path format - /path/to/your/cut/ <- last slash REQUIERED!"
+
+    echo -e "Example usage:
+             \n nexus-pusher /data/yum_packages/repo http://11.22.33.44:8081/repository/yum -s /data/yum_packages"
+
+    echo -e "This way was provide you recursively load from local path to remote nexus repository with correct
+             directory structure"
+
+    exit 254
+    ;;
+
+esac

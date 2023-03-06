@@ -1,0 +1,286 @@
+#!/bin/bash
+
+##################################### INFORMATION ######################################
+# This script was written for the purpose of restoring the OpenStack VM                #
+# via NetBackup software                                                               #
+# Creator: Roman Ponkrashov | e-mail: roponkrashov@headstack.ru                        #
+########################################################################################
+
+# $1 - Vm count of proxy
+# $2 - Proxy name netbackup
+# $3 - OpenStack addr netbackup
+# $4 - Path for fullist vms with path of project
+# $5 - Only id list vms
+# $6 - Volume type to restore
+# $7 - VM Tag
+
+# Text Color Variables http://misc.flogisoft.com/bash/tip_colors_and_formatting
+tcLtG="\033[00;37m"   		 # LIGHT GRAY
+tcDkG="\033[01;30m"   		 # DARK GRAY
+tcLtR="\033[01;31m"   		 # LIGHT RED
+tcLtGRN="\033[01;32m" 		 # LIGHT GREEN
+tcLtBL="\033[01;34m"  		 # LIGHT BLUE
+tcLtP="\033[01;35m"   		 # LIGHT PURPLE
+tcLtC="\033[01;36m"   		 # LIGHT CYAN
+tcW="\033[01;37m"      		 # WHITE
+tcRESET="\033[0m"     		 # DROP ALL COLORS
+tcORANGE="\033[38;5;209m"	 # ORANGE
+#
+
+VM_COUNT_ON_PROXY="$1"
+PROXY_NAME="$2"
+OS_ADDR="$3"
+VM_LIST_FULL="$4"
+VM_ID_LIST="$5"
+VOLUME_TYPE="$6"
+VM_TAG="$7"
+#FROMDATE="$5"
+#TODATE="$6"
+FILEDATE=$(date +"%F_%H-%M")
+
+
+
+if [[ "$VM_COUNT_ON_PROXY" = "--help" ]] || [[ "$VM_COUNT_ON_PROXY" = "-h" ]] ||
+ [[ "$PROXY_NAME" = "--help" ]] || [[ "$PROXY_NAME" = "-h" ]] ||
+ [[ "$OS_ADDR" = "--help" ]] || [[ "$OS_ADDR" = "-h" ]] ||
+ [[ "$VM_LIST_FULL" = "--help" ]] || [[ "$VM_LIST_FULL" = "-h" ]] ||
+ [[ "$VM_ID_LIST" = "--help" ]] || [[ "$VM_ID_LIST" = "-h" ]] ||
+ [[ "$VOLUME_TYPE" = "--help" ]] || [[ "$VOLUME_TYPE" = "-h" ]] ||
+ [[ "$VM_TAG" = "--help" ]] || [[ "$VM_TAG" = "-h" ]]; then
+   echo -e """$tcW""-------------------------------HELP MESSAGE-------------------------------$tcRESET"
+   echo -e """$tcW""\$1 - specify count of restore operations per 1 backup proxy host$tcRESET"
+
+   echo -e """$tcW""\$2 - specify name of the backup proxy host. Look
+                    \"APP_PROXY_SERVER\" in \"/usr/openv/netbackup/bp.conf\"$tcRESET"
+
+   echo -e """$tcW""\$3 - specify name/ipaddr of the openstack region.
+                    Look in directory \"/usr/openv/var/global/\"$tcRESET"
+
+   echo -e """$tcW""\$4 - specify path to list with information about backup target.
+                    Information format is:\n/openstack_project_id/openstack_vm_id/$tcRESET"
+
+   echo -e """$tcW""\$5 - specify path to list with information about backup target.
+                    Information format is:\nopenstack_vm_id$tcRESET"
+
+   echo -e """$tcW""\$6 - specify volume type. this parameter using in restore time.
+                    Supported volume types:\n1. __DEFAULT__\n2. iscsi_common\n3. netapp1\n4.
+                    netapp2\n5. netapp3\n6. netapp4\n7. netapp5\n8. ceph1\n9. ceph2$tcRESET"
+
+   echo -e """$tcW""\$7 - choose count of restore operation per 1 backup proxy host$tcRESET"
+
+   echo -e """$tcW""Example usage: nbk-vm-restore 1
+                    st1-bkp-srv-o-001 11.22.33.44
+                    downloads/fullvmlist_hot.txt downloads/idsonly_hot.txt netapp5 _emergency-restored\n$tcRESET"
+   exit 0
+fi
+
+
+
+if [[ -z "$VM_COUNT_ON_PROXY" ]]; then
+  echo -e """$tcORANGE""\$1 argument is null. Choose VM count. \nUse -h or --help for additional info$tcRESET" && exit 1
+
+elif [[ "$VM_COUNT_ON_PROXY" -gt 255 ]]; then
+  echo -e """$tcORANGE""Count is greater than 255 or not integer. \nUse -h or --help for additional info$tcRESET" && exit 1
+
+ fi
+
+
+
+if [[ -z "$PROXY_NAME" ]]; then 
+  echo -e """$tcORANGE""\$2 argument is null. Choose proxy name is not specified.
+             \nUse -h or --help for additional info$tcRESET" && exit 1
+
+elif [[ $(egrep "^APP_PROXY_SERVER = $PROXY_NAME" /usr/openv/netbackup/bp.conf | awk '{print $3}') != "$PROXY_NAME" ]]; then
+  echo -e """$tcORANGE""$PROXY_NAME is not exist in /usr/openv/netbackup/bp.conf
+             master configuration file. Cannot start backup. \nUse -h or --help for additional info$tcRESET" && exit 1
+
+ fi
+
+
+
+if [[ -z "$OS_ADDR" ]]; then 
+  echo -e """$tcORANGE""\$3 argument is null. Choose Openstack address from NetBackup 
+                        config when VM need restored. \nUse -h or --help for additional info$tcRESET" && exit 1; fi
+
+
+
+ if [[ -z "$VM_LIST_FULL" ]]; then 
+   echo -e """$tcORANGE""\$4 argument is null. Specify path to file with
+                         /project/vm_id/ information for NBK restore. \nUse -h or --help
+                         for additional info$tcRESET" && exit 1
+
+elif [[ -d "$VM_LIST_FULL" ]]; then 
+  echo -e """$tcORANGE""$VM_LIST_FULL is a directory. \nUse -h or --help for additional info$tcRESET" && exit 1
+
+elif [[ ! -f "$VM_LIST_FULL" ]]; then 
+  echo -e """$tcORANGE""$VM_LIST_FULL file does not exist. \nUse -h or --help for additional info$tcRESET" && exit 1
+
+elif [[ $(cat $VM_LIST_FULL | wc -l) -le 0 ]]; then 
+  echo -e """$tcORANGE""Your full list is null. Check file $VM_LIST_FULL $tcRESET \nUse -h or --help
+                        for additional info" && exit 1
+
+ fi
+
+
+
+ if [[ -z "$VM_ID_LIST" ]]; then 
+   echo -e """$tcORANGE""\$5 argument is null. Specify path to file with
+                          vm_id information for NBK restore. \nUse -h or --help for additional info$tcRESET" && exit 1
+
+elif [[ -d "$VM_ID_LIST" ]]; then 
+  echo -e """$tcORANGE""$VM_ID_LIST is a directory. \nUse -h or --help for additional info$tcRESET" && exit 1
+
+elif [[ ! -f "$VM_ID_LIST" ]]; then 
+  echo -e """$tcORANGE""$VM_ID_LIST file does not exist. \nUse -h or --help for additional info$tcRESET" && exit 1
+
+elif [[ $(cat $VM_ID_LIST | wc -l) -le 0 ]]; then 
+  echo -e """$tcORANGE""Your short list is null. Check file $VM_ID_LIST \nUse -h or --help for additional info$tcRESET" && exit 1
+
+ fi
+
+
+
+if [[ -z "$VOLUME_TYPE" ]]; then 
+  echo -e """$tcORANGE""\$6 argument is null. Specify needed volume type for restored VM.
+                        \nUse -h or --help for additional info$tcRESET" && exit 1
+
+elif [[ "$VOLUME_TYPE" != "__DEFAULT__" ]] && [[ "$VOLUME_TYPE" != "iscsi_common" ]] && [[ "$VOLUME_TYPE" != "netapp1" ]] &&
+[[ "$VOLUME_TYPE" != "netapp2" ]] && [[ "$VOLUME_TYPE" != "netapp3" ]] && [[ "$VOLUME_TYPE" != "netapp4" ]] &&
+[[ "$VOLUME_TYPE" != "netapp5" ]] && [[ "$VOLUME_TYPE" != "ceph1" ]] && [[ "$VOLUME_TYPE" != "ceph2" ]]; then
+
+  echo -e """$tcORANGE""Error. Not knowed storage type is using. \nUse -h or --help for additional info$tcRESET"
+
+  echo -e """$tcORANGE""Please specify one of: \n1. __DEFAULT__\n2.
+                        iscsi_common\n3. netapp1\n4. netapp2\n5. netapp3\n6. netapp4\n7.
+                        netapp5\n8. ceph1\n9. ceph2\n. \nUse -h or --help for additional info$tcRESET"
+exit 1
+
+fi
+
+
+
+if [[ -z "$VM_TAG" ]]; then 
+  echo -e """$tcORANGE""\$7 argument is null. Specify needed name tag for restored VM.
+                        \nUse -h or --help for additional info$tcRESET" && exit 1; fi
+
+ echo > /tmp/"$PROXY_NAME"full_"$FILEDATE"
+ echo > /tmp/"$PROXY_NAME"short_"$FILEDATE"
+
+ head -"$VM_COUNT_ON_PROXY" "$VM_LIST_FULL" > /tmp/"$PROXY_NAME"full_"$FILEDATE"
+
+
+
+  if [[ $(cat /tmp/"$PROXY_NAME"full_"$FILEDATE" | wc -l) -le 0 ]]; then 
+    echo -e """$tcORANGE""Your full proxy list is null. Check file /tmp/""$PROXY_NAME""full_""$FILEDATE""
+                          \nUse -h or --help for additional info $tcRESET" && exit 1; fi
+
+ sed -i 1,"$VM_COUNT_ON_PROXY"d "$VM_LIST_FULL" 
+
+ head -"$VM_COUNT_ON_PROXY" "$VM_ID_LIST" > /tmp/"$PROXY_NAME"short_"$FILEDATE" 
+
+
+
+  if [[ $(cat /tmp/"$PROXY_NAME"short_"$FILEDATE" | wc -l) -le 0 ]]; then 
+    echo -e """$tcORANGE""Your short proxy list is null. Check file /tmp/""$PROXY_NAME""short_""$FILEDATE""
+                          \nUse -h or --help for additional info $tcRESET" && exit 1; fi
+
+ sed -i 1,"$VM_COUNT_ON_PROXY"d "$VM_ID_LIST"
+ 
+
+mapfile -t VM_LIST_FULL_ARRAY < <(cat /tmp/"$PROXY_NAME"full_"$FILEDATE")
+
+
+
+if [[ "${#VM_LIST_FULL_ARRAY[*]}" -le 0 ]]; then 
+  echo -e """$tcORANGE""Your array for full list is null. Check file /tmp/""$PROXY_NAME""full_""$FILEDATE""
+                        \nUse -h or --help for additional info $tcRESET" && exit 1; fi
+
+mapfile -t VM_ID_LIST_ARRAY < <(cat /tmp/"$PROXY_NAME"short_"$FILEDATE")
+
+
+
+if [[ "${#VM_ID_LIST_ARRAY[*]}" -le 0 ]]; then 
+  echo -e """$tcORANGE""Your array for short list is null. Check file /tmp/""$PROXY_NAME""short_""$FILEDATE""
+                        \nUse -h or --help for additional info $tcRESET" && exit 1; fi
+
+COUNT=$(expr ${#VM_ID_LIST_ARRAY[*]} - 1)
+
+
+
+for ((vmid=0; vmid<=$COUNT; vmid++)) do
+
+  echo -e "\n----------------------START WORK FOR VM - ${VM_ID_LIST_ARRAY[$vmid]}----------------------"
+  echo -e "$(date) Start listing backups for VM ${VM_LIST_FULL_ARRAY[$vmid]} [$tcORANGE IN PROGRESS$tcRESET ]"
+  
+  /usr/openv/netbackup/bin/bplist -B -C "$OS_ADDR" -s "12/31/2021" -e "01/14/2022" \
+  -S "st1lnxbkp01" -t 44 -l -R "${VM_LIST_FULL_ARRAY[$vmid]}*" > /dev/null 2>&1
+
+  if [[ "$?" -eq 0 ]]; then 
+    echo -e "$(date) Success. Entity for backup VM ${VM_LIST_FULL_ARRAY[$vmid]} was found [$tcLtGRN OK$tcRESET ]"
+   else
+    echo -e "$(date) No entity was found for VM - ${VM_LIST_FULL_ARRAY[$vmid]} Restore not started [$tcLtR ERROR$tcRESET ]"
+    echo -e "$(date +"%a %Z %z %T %F") [ERROR] - VM ${VM_ID_LIST_ARRAY[$vmid]} was not found on $OS_ADDR
+             - $PROXY_NAME" >> /tmp/nbk-vm-restore.log 
+    continue
+  fi   
+
+   DISK_COUNT=$(/usr/openv/netbackup/bin/bplist -B -C "$OS_ADDR" -s "12/31/2021" -e "01/14/2022" -S "st1lnxbkp01" -t 44 -l -R "${VM_LIST_FULL_ARRAY[$vmid]}*" | awk '{print $8}' | tr -cd '\11\12\15\40-\176' | sort | uniq | grep "VolumeType" | wc -l)
+   VM_NEW_NAME=$(/usr/openv/netbackup/bin/bplist -B -C "$OS_ADDR" -s "12/31/2021" -e "01/14/2022" -S "st1lnxbkp01" -t 44 -l -R "${VM_LIST_FULL_ARRAY[$vmid]}*" | awk '{print $8}' | tr -cd '\11\12\15\40-\176' | sort | uniq | grep "InstanceName" | sed "s|\(.*InstanceName\=.*$\)|\1_emergency_restored|g" | sed 's|.*\(InstanceName\=\)||')
+
+   /usr/openv/netbackup/bin/bplist -B -C "$OS_ADDR" -s "12/31/2021" -e "01/14/2022" -S "st1lnxbkp01" -t 44 -l -R "${VM_LIST_FULL_ARRAY[$vmid]}*" | awk '{print $8}' | tr -cd '\11\12\15\40-\176' | sort | uniq > /usr/openv/var/global/st1fix/recover_"${VM_ID_LIST_ARRAY[$vmid]}_$FILEDATE"
+  
+  echo -e "$(date) Start forming backup file VM ${VM_LIST_FULL_ARRAY[$vmid]} [$tcORANGE IN PROGRESS$tcRESET ]"
+   /usr/openv/netbackup/bin/bplist -B -C "$OS_ADDR" -s "12/31/2021" -e "01/14/2022" -S "st1lnxbkp01" -t 44 -l -R "${VM_LIST_FULL_ARRAY[$vmid]}*" | awk '{print $8}' | tr -cd '\11\12\15\40-\176' | sort | uniq | grep "InstanceName\|VolumeType" | sed 's|^\(/.*\)|change \1 to \1|g' | sed "s|\(to\s/.*VolumeType\=\)__DEFAULT__|\1$VOLUME_TYPE|g" | sed "s|\(to\s/.*InstanceName\=.*$\)|\1$VM_TAG$FILEDATE|g" > /usr/openv/var/global/st1fix/change_"${VM_ID_LIST_ARRAY[$vmid]}_$FILEDATE"
+
+
+
+  if [[ "$?" -eq 0 ]]; then 
+    echo -e "$(date) Success. Restore and change lists was successfully created [$tcLtGRN OK$tcRESET ]"
+  else
+    echo -e "$(date) Fail [$tcLtR ERROR$tcRESET ]"
+  fi   
+
+  echo -e "$(date) Start backup operation with VM ${VM_LIST_FULL_ARRAY[$vmid]} [$tcORANGE IN PROGRESS$tcRESET ]"
+    /usr/openv/netbackup/bin/bprestore -D "$PROXY_NAME" -C "$OS_ADDR" -s "12/31/2021" -e "01/14/2022" \
+    -R /usr/openv/var/global/st1fix/change_"${VM_ID_LIST_ARRAY[$vmid]}_$FILEDATE" -t 44 -f \
+     /usr/openv/var/global/st1fix/recover_"${VM_ID_LIST_ARRAY[$vmid]}_$FILEDATE" -print_jobid > /tmp/jobid
+
+
+
+  if [[ "$?" -eq 0 ]]; then 
+    JOBID=$(awk '{print $3}' /tmp/jobid | sed 's|\(Id\=\)||')
+    echo -e "$(date) Success. Restore job is running [$tcLtGRN OK$tcRESET ]"
+    echo -e "$(date +"%a %Z %z %T %F") [NOTICE] - VM ${VM_ID_LIST_ARRAY[$vmid]} restore running on $OS_ADDR
+             - $PROXY_NAME with JobID - $JOBID" >> /tmp/nbk-vm-restore.log
+  else
+    echo -e "$(date) Cannot start restore task. [$tcLtR ERROR$tcRESET ]\n"
+  fi  
+
+  echo -e """$tcLtC""VM - ${VM_ID_LIST_ARRAY[$vmid]} restored with params:\n1. New name: $VM_NEW_NAME\n2.
+   Disks count: $DISK_COUNT\n3. New VolumeType: $VOLUME_TYPE\n4. Netbackup JobID: $JOBID\n5. Proxy: $PROXY_NAME""$tcRESET"""
+
+  echo -e """$tcORANGE""Additional information:\nYou can stop this restore job using:
+   /usr/openv/netbackup/bin/admincmd/bpdbjobs -cancel $JOBID $tcRESET"
+
+  echo -e """$tcORANGE""You can restart this restore job using: /usr/openv/netbackup/bin/admincmd/bpdbjobs
+   -restart $JOBID $tcRESET"
+
+  echo -e """$tcORANGE""You can watch progress of this job using: watch /usr/openv/netbackup/bin/admincmd/bpdbjobs
+   -jobid $JOBID""$tcRESET"""
+   
+  echo -e """$tcORANGE""You can watch log of this job using: watch less
+   /usr/openv/netbackup/db/jobs/trylogs/$JOBID.t ""$tcRESET"""
+
+done
+
+  rm -f /tmp/jobid
+
+  echo -e """$tcLtC""\nAll tasks done$tcRESET"
+
+  echo -e """$tcORANGE""Notice:\nYou can cancel all of this restore jobs using:
+   /usr/openv/netbackup/bin/admincmd/bpdbjobs -cancel_all -M st1lnxbkp01$tcRESET"
+
+  echo -e """$tcORANGE""You can watch progress all of this restore jobs using: watch
+   /usr/openv/netbackup/bin/admincmd/bpdbjobs -jobid JOBID_1,JOBID_2,JOBID_3$tcRESET"
+
+  echo -e """$tcORANGE""The script log file was stored in: /tmp/nkb-vm-restore.log$tcRESET"   

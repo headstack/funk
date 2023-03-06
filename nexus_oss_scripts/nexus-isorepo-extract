@@ -1,0 +1,93 @@
+#!/bin/bash
+
+FROM="$1"
+MOUNT_TO="$2"
+STORE_PATH="$3"
+RESET_PATH="$4"
+debug="echo -e"
+
+if [[ "$1" = "--help" ]] || [[ "$1" = "-h" ]] || [[ "$2" = "--help" ]] || [[ "$2" = "-h" ]] || [[ -z "$1" ]] || [[ -z "$2" ]]; then
+    echo -e "\$1 argument - path where to find directories with isos"
+    echo -e "\$2 argument - path where to mount isos"
+    echo -e "\$3 argument - path where to stored files from mounted iso"
+    echo -e "\$4 argument - path has to be erased it's need for forming repo structure in your store path"
+    echo -e "\$5 argument - debug mode only. Nothing to do. Only output result with resolved variables.
+             Use - \"-d\" or \"--debug\" option to activate this mode."
+    echo -e "Example usage: \n nexus-isorepo-extract
+             /var/images/astra_add_repos/dl.astralinux.ru/astra/stable/smolensk/security-updates/1.6/devel/
+             /mnt
+             /var/images/repomy /var/images/astra_add_repos/dl.astralinux.ru/astra/stable/smolensk/security-updates/1.6/devel/"
+    exit 1
+fi
+
+if [[ "$5" = "-d" ]] || [[ "$5" = "--debug" ]]; then
+
+     mapfile -t source_isos < <(find "$FROM" -type f -name "*.iso")
+     mapfile -t target_dirs < <(find "$FROM" -type d ! -empty | awk -F"$RESET_PATH" '{print $NF}')
+
+     for i in "${!source_isos[*]}"; do
+    if [[ -z "${source_isos[$i]}" ]]; then
+      unset 'source_isos[$i]'
+      fi
+      done
+
+      for i in "${!target_dirs[*]}"; do
+    if [[ -z "${source_isos[$i]}" ]]; then
+      unset 'target_dirs[$i]'
+      fi
+     done
+    
+         SOURCES_COUNT="${#target_dirs[*]}"
+
+
+
+echo -e "\n\n\n\n" && echo "${target_dirs[*]}" && echo -e "\n\n\n\n"
+echo -e "$SOURCES_COUNT"
+
+$debug "mkdir -p $STORE_PATH"
+
+       for (( a=0; a<="$SOURCES_COUNT"; a++ )); do
+       
+       echo -e "Mounting iso \"${source_isos[$a]}\" to \"$MOUNT_TO\""
+        $debug "mount \"${source_isos[$a]}\" \"$MOUNT_TO\""
+
+       echo -e "Creating copy directory \"$STORE_PATH/${target_dirs[$a]}\""
+        $debug "mkdir -p \"$STORE_PATH/${target_dirs[$a]}\""
+       
+       echo -e "Copying repodata from \"$MOUNT_TO\" to \"$STORE_PATH/${target_dirs[$a]}\""
+        $debug "cp -rp \"$MOUNT_TO/*\" \"$STORE_PATH/${target_dirs[$a]}\""
+    
+       echo -e "Unmount repodata from \"$MOUNT_TO\""
+        $debug umount "\"$MOUNT_TO\""
+
+echo -e "Done. Your repofiles stored in $STORE_PATH"
+echo -e "Use nexus-pusher to download your repodata to a nexus-repository"
+
+       done
+
+else
+
+     mapfile -t source_isos < <(find "$FROM" -type f -name "*.iso")
+     mapfile -t target_dirs < <(find "$FROM" -type d | awk -F"$RESET_PATH" '{print $NF}')
+     FILES_COUNT=$(expr ${#source_isos[*]} - 1)
+
+       for (( a=0; a<="$FILES_COUNT"; a++ )); do
+       
+       echo -e "Mounting iso \"${source_isos[$a]}\" to \"$MOUNT_TO\""
+        mount "${source_isos[$a]}" "$MOUNT_TO"
+
+       echo -e "Creating copy directory \"$STORE_PATH/${target_dirs[$a]}\""
+        mkdir -p "$STORE_PATH/${target_dirs[$a]}"
+       
+       echo -e "Copying repodata from \"$MOUNT_TO\" to \"$STORE_PATH/${target_dirs[$a]}\""
+        cp -rp $MOUNT_TO/* "$STORE_PATH/${target_dirs[$a]}"
+    
+       echo -e "Unmount repodata from \"$MOUNT_TO\""
+        umount "$MOUNT_TO"
+
+echo -e "Done. Your repofiles stored in $STORE_PATH"
+echo -e "Use nexus-pusher for download your repodata to nexus-repository\n"
+
+        done
+
+fi

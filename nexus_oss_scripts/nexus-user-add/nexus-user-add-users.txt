@@ -1,0 +1,3 @@
+user1@example.com Firstname Secondname access-group USER_PASSWD
+user2@example.com Firstname Secondname access-group USER_PASSWD
+user3@example.com Firstname Secondname access-group USER_PASSWD

@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# $1 - Vm list id's
+# $2 - Region
+# $3 - Final list for vm and project ids
+
+VM_LIST_IDS="$2"
+FINAL_LIST="$3"
+FINAL_LIST_IDS="$4"
+
+case "$1" in
+
+get-not-active-from-file)
+mapfile -t VM_LIST_IDS < <(cat "$VM_LIST_IDS" | sort | uniq)
+rm -f $FINAL_LIST
+rm -f $FINAL_LIST_IDS 
+
+for VMIDS in ${VM_LIST_IDS[*]}; do
+
+if [[ $(openstack server show $VMIDS 2>&1 | awk '{print $1}') != "No" ]]; then
+
+if [[ $(openstack server show $VMIDS -c status -f yaml | awk '{print $2}') != "ACTIVE" ]]; then
+PROJECT_ID=$(openstack server show $VMIDS -c project_id -f yaml | awk '{print $2}')
+echo -e "Write VM $VMIDS in working list in $FINAL_LIST"
+echo -e "/$PROJECT_ID/$VMIDS/" >> $FINAL_LIST
+echo -e "Write VM $VMIDS in working list with only id in $FINAL_LIST_IDS"
+echo -e "$VMIDS" >> $FINAL_LIST_IDS
+else
+echo -e "VM $VMIDS is already ACTIVE"
+fi
+
+fi
+done
+
+scp -rp "$3" backupmaster:/root/backup/downloads/
+scp -rp "$4" backupmaster:/root/backup/downloads/
+
+ ;;
+
+
+get-all-vm-from-file)
+mapfile -t VM_LIST_IDS < <(cat "$VM_LIST_IDS" | sort | uniq)
+rm -f $FINAL_LIST
+rm -f $FINAL_LIST_IDS 
+
+for VMIDS in ${VM_LIST_IDS[*]}; do
+
+
+if [[ $(openstack server show $VMIDS 2>&1 | awk '{print $1}') != "No" ]]; then
+
+PROJECT_ID=$(openstack server show $VMIDS -c project_id -f yaml | awk '{print $2}')
+
+echo -e "Write VM $VMIDS in working list in $FINAL_LIST"
+echo -e "/$PROJECT_ID/$VMIDS/" >> $FINAL_LIST
+echo -e "Write VM $VMIDS in working list with only id in $FINAL_LIST_IDS"
+echo -e "$VMIDS" >> $FINAL_LIST_IDS
+
+fi
+
+done 
+
+scp -rp "$3" backupmaster:/root/backup/downloads/
+scp -rp "$4" backupmaster:/root/backup/downloads/
+
+;;
+
+esac

@@ -1,0 +1,82 @@
+#!/bin/bash
+
+SYNC_ADDR="$2"
+SSH_PORT="$3"
+SSH_KEY="$4"
+SSH_USER="$5"
+SYNC_SOURCE="$6"
+SYNC_PATH="$7"
+SYNC_LOG="$8"
+
+
+case "$1" in
+
+start-background)
+pidof rsync > /dev/null
+
+if [[ "$?" -eq 0 ]]; then
+
+echo -e "$(date) - Nexus syncro is running" >> "$SYNC_LOG"
+exit 0
+
+else
+
+echo -e "$(date) - Nexus syncro is not running. Starting" >> "$SYNC_LOG"
+rsync -avzuXogh -e "ssh -p $SSH_PORT -i $SSH_KEY" --progress "$SYNC_SOURCE" "$SSH_USER"@"$SYNC_ADDR":"$SYNC_PATH" &
+exit 0
+
+fi ;;
+
+start-foreground)
+pidof rsync > /dev/null
+
+if [[ "$?" -eq 0 ]]; then
+
+echo -e "$(date) - Nexus syncro is running" >> "$SYNC_LOG"
+exit 0
+
+else
+
+echo -e "$(date) - Nexus syncro is not running. Starting" >> "$SYNC_LOG"
+rsync -avzuXogh -e "ssh -p $SSH_PORT -i $SSH_KEY" --progress "$SYNC_SOURCE" "$SSH_USER"@"$SYNC_ADDR":"$SYNC_PATH" &
+exit 0
+
+fi ;;
+
+dry-run)
+pidof rsync > /dev/null
+
+if [[ "$?" -eq 0 ]]; then
+
+echo -e "$(date) - Nexus syncro is running" >> "$SYNC_LOG"
+exit 0
+
+else
+
+echo -e "$(date) - Nexus syncro is not running. Starting" >> "$SYNC_LOG"
+echo rsync -avzuXogh -e "ssh -p $SSH_PORT -i $SSH_KEY" --progress "$SYNC_SOURCE" "$SSH_USER"@"$SYNC_ADDR":"$SYNC_PATH"
+exit 0
+
+fi ;;
+
+-h)
+echo -e "--------------------------HELP--------------------------"
+echo -e "\$1\" \"start-foreground\" - start process in a foreground"
+echo -e "\$1\" \"start-background\" - start process in a background"
+echo -e "\$1\" \"dry-run\" - start script in debug mode without performing real actions"
+echo -e "\$1\" \"-h\" - show this help"
+echo -e "\$1\" \"--help\" - show this help"
+echo -e "\$1\" \"No input\" - show this help"
+
+echo -e "\$2\" \"SYNC_ADDR\" - IPv4 Addr of external host where need to copying data" 
+echo -e "\$3\" \"SSH_PORT\" - Specify SSH Port for connect to external host" 
+echo -e "\$4\" \"SSH_KEY\" - Specify SSH key for authenticate on external host" 
+echo -e "\$5\" \"SSH_USER\" - Specify SSH user for authenticate on external host" 
+echo -e "\$6\" \"SYNC_SOURCE\" - Specify source directory of your local machine to sent on external host" 
+echo -e "\$7\" \"SYNC_PATH\" - Specify path where need store data on external host from your local directory" 
+echo -e "\$8\" \"SYNC_LOG\" - Specify log path on a your local machine to write log" 
+echo -e "\nExample:\n" 
+echo -e "nexus-repo-sync start-background 11.22.33.44 7721
+         /user/.ssh/ssh_key user /var/lib/docker/volumes/nexus-data/ /var/lib/docker/volumes/
+         /home/user/nexus-sync.log\n" 
+esac

@@ -1,0 +1,57 @@
+#!/bin/bash
+
+case "$1" in
+gen-config)
+
+  mapfile -t IP_PLAN < <(cat "$9")
+  SRV_COUNT=$(cat "$9" | wc -l)
+ 
+  echo -e "########################## $3 ##########################"
+
+  for ((i=$4; i<=$5; i++)); do
+    HOSTNAMESSRVS+=($2$i)
+  done
+
+  for ((i=0; i<$SRV_COUNT; i++)); do
+    echo -e "Host ${HOSTNAMESSRVS[$i]}"    
+    echo -e "    HostName ${IP_PLAN[$i]}"
+    echo -e "    Port $6"
+    echo -e "    IdentitiesOnly yes"
+    echo -e "    IdentityFile $7"
+    echo -e "    User $8\n"
+  done ;;
+
+-h) 
+echo -e "# \$1 - gen-config - generate config for .ssh/config\n
+# \$2 - Hostname part e.g. st1-sds1-0\n
+# \$3 - Specify server section. For human-readable format in .ssh/config e.g. ST1-SDS1-CEPH-OSD\n
+# \$4 - Hostname part number start in this case need give 01\n
+# \$5 - In this case e.g. 99. In result with \$3+\$4 we get 99 hostname numbers for cars\n
+# \$6 - Specify SSH port\n
+# \$7 - Identity file full path to ssh keyfile\n
+# \$8 - SSH User\n
+# \$9 - IP plan for reading (from file)\n" ;;
+
+--help) 
+echo -e "# \$1 - gen-config - generate config for .ssh/config\n
+# \$2 - Hostname part e.g. st1-sds1-0\n
+# \$3 - Specify server section. For human-readable format in .ssh/config e.g. ST1-SDS1-CEPH-OSD\n
+# \$4 - Hostname part number start in this case need give 01\n
+# \$5 - In this case e.g. 99. In result with \$3+\$4 we get 99 hostname numbers for cars\n
+# \$6 - Specify SSH port\n
+# \$7 - Identity file full path to ssh keyfile\n
+# \$8 - SSH User\n
+# \$9 - IP plan for reading (from file)\n" ;;
+
+*)
+echo -e "# \$1 - gen-config - generate config for .ssh/config\n
+# \$2 - Hostname part e.g. st1-sds1-0\n
+# \$3 - Specify server section. For human-readable format in .ssh/config e.g. ST1-SDS1-CEPH-OSD\n
+# \$4 - Hostname part number start in this case need give 01\n
+# \$5 - In this case e.g. 99. In result with \$3+\$4 we get 99 hostname numbers for cars\n
+# \$6 - Specify SSH port\n
+# \$7 - Identity file full path to ssh keyfile\n
+# \$8 - SSH User\n
+# \$9 - IP plan for reading (from file)\n" ;;
+
+esac

@@ -1,0 +1,119 @@
+#!/bin/bash
+
+# Text Color Variables http://misc.flogisoft.com/bash/tip_colors_and_formatting
+tcLtG="\033[00;37m"   		 # LIGHT GRAY
+tcDkG="\033[01;30m"   		 # DARK GRAY
+tcLtR="\033[01;31m"   		 # LIGHT RED
+tcLtGRN="\033[01;32m" 		 # LIGHT GREEN
+tcLtBL="\033[01;34m"  		 # LIGHT BLUE
+tcLtP="\033[01;35m"   		 # LIGHT PURPLE
+tcLtC="\033[01;36m"   		 # LIGHT CYAN
+tcW="\033[01;37m"      		 # WHITE
+tcRESET="\033[0m"     		 # DROP ALL COLORS
+tcORANGE="\033[38;5;209m"	 # ORANGE
+#
+
+# $1 - operation in case
+# $2 - VM file list
+# $3 - Tenant file list
+# $4 - Timeout checking iteration cycle count
+# $5 - Time to sleep for waiting timeout from $4
+# $6 - Log file for not started VM's
+
+case "$1" in
+start-by-list)  
+  
+  touch "$6"
+  echo > "$6"
+
+  echo -e "\n------------------------------ PREPARE STAGE ------------------------------"
+
+  echo -e "Reading VM list from file $2 [$tcORANGE IN PROGRESS$tcRESET ]" 
+  mapfile -t vmlist < <(cat "$2")
+   VMS_COUNT=$(expr ${#vmlist[*]} - 1)
+  echo -e "Reading vm list done success [$tcLtGRN OK$tcRESET ]"
+
+  echo -e "Reading tenants list from file $3 [$tcORANGE IN PROGRESS$tcRESET ]" 
+  mapfile -t vmprojectlist < <(cat "$3")
+   TENANTS_COUNT="${#vmprojectlist[*]}" 
+  echo -e "Reading tenants list done success [$tcLtGRN OK$tcRESET ]"
+
+  echo -e "\nStart operation to prepare VMS to START [$tcORANGE IN PROGRESS$tcRESET ]" 
+  for (( i=0; i<="$VMS_COUNT"; i++ )); do
+
+  MATCHCOUNT=0 
+
+  echo -e "\n------------------------------ OPERATE $i WITH VM ${vmlist[$i]} STAGE  ------------------------------"
+
+     echo -e "Preparing for export ${vmprojectlist[$i]} tenant to OS ENV [$tcORANGE IN PROGRESS$tcRESET ]"
+     if [[ "${vmprojectlist[$i]}" != "" ]]; then export OS_PROJECT_NAME=${vmprojectlist[$i]} && export OS_TENANT_NAME=${vmprojectlist[$i]}
+       echo -e "Successfully exported ${vmprojectlist[$i]} tenant [$tcLtGRN OK$tcRESET ]" 
+      else echo -e "${vmprojectlist[$i]} var is null. [$tcLtR ERROR$tcRESET ]"
+       fi     
+
+    echo -e "Search volumes for VM - ${vmlist[$i]} [$tcORANGE IN PROGRESS$tcRESET ]" 
+    mapfile -t FINDVOLUMES < <(openstack server show "${vmlist[$i]}" -c volumes_attached -f yaml | awk '{print $3}')
+    echo -e "Successfully find ${vmprojectlist[$i]} volumes [$tcLtGRN OK$tcRESET ]" 
+    
+       echo -e "Check that the volumes uses the volume type - iscsi_common for VM - ${vmlist[$i]} on  [$tcORANGE IN PROGRESS$tcRESET ]"
+       for vol in ${FINDVOLUMES[*]}; do
+        
+        echo -e "Check that the volume $vol of VM - ${vmlist[$i]} [$tcORANGE IN PROGRESS$tcRESET ]"
+        if [[ $(openstack volume show $vol -c type -f yaml | awk '{print $2}') != "iscsi_common" ]]; then
+          echo -e "Volume $vol has no volume type iscsi_common. Checkout next VM. [$tcLtR SKIPPED$tcRESET ]" 
+            RBDVMCOUNT+=("vmlist[$i]")
+          else
+            echo -e "Volume $vol of VM ${vmlist[$i]} has volume type iscsi_common. Continue volume check for this VM. [$tcLtGRN FINDING$tcRESET ]"
+              ((MATCHCOUNT++))
+        fi
+        continue
+       done
+
+    mapfile -t FINDVOLUMES < <(openstack server show "${vmlist[$i]}" -c volumes_attached -f yaml | awk '{print $3}')
+    DISKS_COUNT=$(expr ${#FINDVOLUMES[*]} - 1) 
+
+            if [[ "$MATCHCOUNT" = "$DISKS_COUNT" ]]; then
+                NETAPPVMCOUNT+=("vmlist[$i]")
+                echo -e "VM ${vmlist[$i]} has $MATCHCOUNT/"$DISKS_COUNT" disks on netapp [$tcLtGRN FULL NETAPP MATCHED$tcRESET ]"
+            else
+                echo -e "VM ${vmlist[$i]} has $MATCHCOUNT/"$DISKS_COUNT" disks on netapp [$tcLtR NO MATCH$tcRESET ]"
+                unset vmlist[$i]
+                continue
+            fi
+
+         if [[ $(openstack server show "${vmlist[$i]}" -c status -f yaml | awk '{print $2}') != "ACTIVE" ]]; then
+         echo -e "Trying to start server - ${vmlist[$i]} [$tcORANGE IN PROGRESS$tcRESET ]"
+         openstack server start "${vmlist[$i]}"
+         echo -e "VM ${vmlist[$i]} operation start complete [$tcLtGRN FULL NETAPP MATCHED$tcRESET ]"
+           
+                    WAITING=0
+
+           while [[ "$4" != "$WAITING" ]]; do
+             echo -e "Server ${vmlist[$i]} is not running yet. Waiting $5 seconds then watch status again [$tcORANGE WAITING START COMPLETING$tcRESET ]"
+                   sleep "$5"
+                   ((WAITING++))
+           done
+
+         fi
+
+         if [[ $(openstack server show "${vmlist[$i]}" -c status -f yaml | awk '{print $2}') != "ACTIVE" ]]; then
+         echo -e "VM ${vmlist[$i]} was not started. Write she in logfile in path - $6 [$tcLtR NOT STARTED$tcRESET ]"
+         echo -e "VM ${vmlist[$i]} was not started. [$tcLtR NOT STARTED$tcRESET ]" >> "$6"
+         fi
+         
+         if [[ $(openstack server show "${vmlist[$i]}" -c status -f yaml | awk '{print $2}') = "ACTIVE" ]]; then
+         echo -e "VM ${vmlist[$i]} was started. Write she in logfile in path - $6 [$tcLtGRN VM SUCCESSFULLY STARTED$tcRESET ]"
+         echo -e "VM ${vmlist[$i]} was started. [$tcLtGRN VM SUCCESSFULLY STARTED]" > "$6"         
+         fi
+
+    done
+
+    echo -e "ONLY NETAPP VM COUNT IS - ${#NETAPPVMCOUNT[*]} VMs"
+    echo -e "BLAND VM COUNT IS - ${#RBDVMCOUNT[*]} VMs"
+
+    echo -e "ONLY NETAPP VM IS - ${#NETAPPVMCOUNT[*]} VMs\n\n\n"
+    echo -e "BLAND VM IS - ${#RBDVMCOUNT[*]} VMs"
+
+    ;;
+
+esac
